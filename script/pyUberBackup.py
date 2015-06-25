@@ -18,6 +18,11 @@ class UberBackupJob:
 		self.lastBackup = '1970-01-01'
 		
 class UberBackup:
+	COLOR_GREEN = '\033[1;32m'
+	COLOR_RED = '\033[1;31m'
+	COLOR_YELLOW = '\033[1;33m'
+	COLOR_CYAN = '\033[1;36m'
+	
 	def __init__(self, basepath):
 		self._basePath = basepath
 		self._configParser = configparser.ConfigParser()
@@ -25,11 +30,11 @@ class UberBackup:
 		self._ssh_user = ''
 		self._date_format = '%Y-%m-%d'
 		
-	def _log(self, line):
-		print(time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + line)
+	def _log(self, line, color = ''):		
+		print(time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + color + line + '\033[0m')
 		
 	def _loadConfig(self):
-		self._log('Loading config...')
+		self._log('Reloading config...', self.COLOR_YELLOW)
 		
 		self._configParser.read([ self._basePath + '/conf/uberbackup.conf' ])
 		
@@ -75,7 +80,7 @@ class UberBackup:
 		return os.path.exists(self._basePath + '/data/' + job.name + '/' + time.strftime(self._date_format))
 		
 	def _prepareJob(self, job):
-		self._log('Preparing job ' + job.name + '...')
+		self._log('Preparing job ' + job.name + '...', self.COLOR_CYAN)
 		# Upewniamy sie ze katalog istnieje
 		if not os.path.exists(self._basePath + '/data/' + job.name):
 			os.mkdir(self._basePath + '/data/' + job.name)
@@ -89,11 +94,11 @@ class UberBackup:
 				# TODO: Kasowanie starych kopii
 				while len(list) >= self._max_backups:
 					item = list.pop(0)
-					self._log('Removing directory ' + job.name + '/' + item + '...')
+					self._log('Removing directory ' + job.name + '/' + item + '...', self.COLOR_CYAN)
 					subprocess.call(['rm', '-rf', self._basePath + '/data/' + job.name + '/' + item], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 					
 				# Linkujemy ostatni katalog jako bierząca kopia
-				self._log('Linking directory ' + job.name + '/' + list[-1] + ' -> ' + job.name + '/current...')
+				self._log('Linking directory ' + job.name + '/' + list[-1] + ' -> ' + job.name + '/current...', self.COLOR_CYAN)
 				lastDir = self._basePath + '/data/' + job.name + '/' + list[-1]			
 				cp_cmd = ['cp', '-al', lastDir, self._basePath + '/data/' + job.name + '/current']			
 				code = subprocess.call(cp_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -106,7 +111,7 @@ class UberBackup:
 	def _execJob(self, job):	
 		self._prepareJob(job)
 
-		self._log('Starting job ' + job.name + '...')
+		self._log('Starting job ' + job.name + '...', self.COLOR_CYAN)
 		excludes = ''
 		for e in job.excludes:
 			excludes = excludes + '--exclude=' + e + ' '
@@ -119,9 +124,9 @@ class UberBackup:
 		if code == 0 or code == 24:
 			# Zmieniamy nazwe katalogu na dzisiejsza date
 			os.rename(self._basePath + '/data/' + job.name + '/current', self._basePath + '/data/' + job.name + '/' + time.strftime(self._date_format))			
-			self._log('Job ' + job.name + ' finished successfully')			
+			self._log('Job ' + job.name + ' finished successfully', self.COLOR_GREEN)			
 		else:
-			self._log('Job ' + job.name + ' failed (code = ' + str(code) + ')')
+			self._log('Job ' + job.name + ' failed (code = ' + str(code) + ')', self.COLOR_RED)
 			
 		job.isRunning = False
 		
