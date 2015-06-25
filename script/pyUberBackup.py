@@ -5,8 +5,7 @@ import subprocess
 import time
 import os
 import threading
-
-BASE_PATH = '/mnt/backup/uberbackup'
+import sys
 
 class UberBackupJob:
 	def __init__(self):
@@ -34,7 +33,7 @@ class UberBackup:
 		print(time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + color + line + '\033[0m')
 		
 	def _loadConfig(self):
-		self._log('Reloading config...', self.COLOR_YELLOW)
+		self._log('Loading config...', self.COLOR_YELLOW)
 		
 		self._configParser.read([ self._basePath + '/conf/uberbackup.conf' ])
 		
@@ -58,14 +57,22 @@ class UberBackup:
 			job.path = self._configParser[sect]['path']
 			job.excludes = self._configParser[sect]['exclude'].split("\n")
 			
-			list = self._getBackups(job)
-			if list:
-				job.lastBackup = list[-1]
-				
 			self._jobs.append(job)
 			
+		self._rescheduleJobs();
+		
+		
+	# Sortujemy zadania - pierwsze są te które mają najstarsze kopie
+	def _rescheduleJobs(self):
+		for job in self._jobs:
+			list = self._getBackups(job)
+			
+			if list:
+				job.lastBackup = list[-1]
+
 		self._jobs.sort(key=lambda x: x.lastBackup)
 		
+	
 	def _getBackups(self,job):
 		list = []
 		if not os.path.exists(self._basePath + '/data/' + job.name):
@@ -93,7 +100,7 @@ class UberBackup:
 			list = self._getBackups(job)
 			
 			if list:
-				# TODO: Kasowanie starych kopii
+				# Kasowanie starych kopii
 				while len(list) >= self._max_backups:
 					item = list.pop(0)
 					self._log('Removing directory ' + job.name + '/' + item + '...', self.COLOR_CYAN)
@@ -132,17 +139,17 @@ class UberBackup:
 			
 		job.isRunning = False
 		
-					
+		
 	def start(self):
 		self._loadConfig()
 		
-		idx = 0		
+		idx = 0
 		while True:
 			if threading.active_count() - 1 < self._max_jobs:
 				job = self._jobs[idx]
 				idx = idx + 1
 				if idx >= len(self._jobs):
-					self._loadConfig() # Przeladowywujemy konfiguracje
+					self._rescheduleJobs()
 					idx = 0
 					
 				if job.isRunning or self._checkJob(job):
@@ -150,11 +157,12 @@ class UberBackup:
 					
 				job.isRunning = True
 				threading.Thread(target = self._execJob, args=(job,)).start()
-								
-			time.sleep(30)
+			
+			time.sleep(15)
 			
 		
 if __name__ == '__main__':
-	ub = UberBackup(BASE_PATH)
+	basepath = os.path.dirname(os.getcwd() + '/' + sys.argv[0]) + '/..'
+	ub = UberBackup(basepath)
 	ub.start()
 	
