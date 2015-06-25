@@ -46,6 +46,8 @@ class UberBackup:
 		self._max_backups = int(self._configParser['GLOBAL']['max_backups'])
 		self._max_jobs = int(self._configParser['GLOBAL']['max_jobs'])
 		
+		self._jobs = [ ]
+		
 		for sect in self._configParser.sections():
 			if sect == 'GLOBAL':
 				continue
