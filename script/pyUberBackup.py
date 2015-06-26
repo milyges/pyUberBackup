@@ -22,13 +22,14 @@ class UberBackup:
 	COLOR_RED = '\033[1;31m'
 	COLOR_YELLOW = '\033[1;33m'
 	COLOR_CYAN = '\033[1;36m'
+	PID_FILE = '/run/pyUberBackup.pid'
 	
 	def __init__(self, basepath):
 		self._basePath = basepath
 		self._configParser = configparser.ConfigParser()
-		self._jobs = []
-		self._ssh_user = ''
+		self._jobs = []		
 		self._date_format = '%Y-%m-%d'
+		self._pidFile = None
 		
 	def _log(self, line, color = ''):		
 		print('\r\033[K' + time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + color + line + '\033[0m')
@@ -133,8 +134,16 @@ class UberBackup:
 				
 	def _execJob(self, job):	
 		self._prepareJob(job)
-
+		
 		self._log('Starting job ' + job.name + '...', self.COLOR_CYAN)
+		
+		# Sprawdzamy czy host odpowiada na pingi
+		code = subprocess.call(['ping', '-c', '1', '-q', job.host], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+		if code != 0:
+			self._log('Job ' + job.name + ' failed (host not found)', self.COLOR_YELLOW)
+			job.isRunning = False
+			return
+			
 		excludes = ''
 		for e in job.excludes:
 			excludes = excludes + '--exclude=' + e + ' '
@@ -153,8 +162,7 @@ class UberBackup:
 			
 		job.isRunning = False
 		
-		
-	def service(self):
+	def service(self):		
 		if not self._loadConfig():
 			self._log("Can't load config file", self.COLOR_RED)
 			return -1
