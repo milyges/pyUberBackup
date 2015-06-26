@@ -36,13 +36,17 @@ class UberBackup:
 	def _loadConfig(self):
 		self._configParser.read([ self._basePath + '/conf/uberbackup.conf' ])
 		
-		self._ssh_user = self._configParser['GLOBAL']['ssh_user']
-		self._ssh_key = self._configParser['GLOBAL']['ssh_key']
-		self._ssh_opts = self._configParser['GLOBAL']['ssh_opts']
-		self._rsync_opts = self._configParser['GLOBAL']['rsync_opts']
-		self._mailto = self._configParser['GLOBAL']['mailto']
-		self._max_backups = int(self._configParser['GLOBAL']['max_backups'])
-		self._max_jobs = int(self._configParser['GLOBAL']['max_jobs'])
+		try:
+			self._ssh_user = self._configParser['GLOBAL']['ssh_user']
+			self._ssh_key = self._configParser['GLOBAL']['ssh_key']
+			self._ssh_opts = self._configParser['GLOBAL']['ssh_opts']
+			self._rsync_opts = self._configParser['GLOBAL']['rsync_opts']
+			self._mailto = self._configParser['GLOBAL']['mailto']
+			self._max_backups = int(self._configParser['GLOBAL']['max_backups'])
+			self._max_jobs = int(self._configParser['GLOBAL']['max_jobs'])
+		except KeyError as e:
+			self._log("_loadConfig: missing config options: %s" % (str(e)), self.COLOR_RED)
+			return False
 		
 		self._jobs = [ ]
 		
@@ -59,6 +63,8 @@ class UberBackup:
 			self._jobs.append(job)
 			
 		self._rescheduleJobs();
+		
+		return True
 		
 		
 	# Sortujemy zadania - pierwsze są te które mają najstarsze kopie
@@ -132,16 +138,18 @@ class UberBackup:
 		if code == 0 or code == 24:
 			# Zmieniamy nazwe katalogu na dzisiejsza date
 			os.rename(self._basePath + '/data/' + job.name + '/current', self._basePath + '/data/' + job.name + '/' + time.strftime(self._date_format))			
-			self._log('Job ' + job.name + ' finished successfully', self.COLOR_GREEN)			
+			self._log('Job ' + job.name + ' finished successfully', self.COLOR_GREEN)
 		else:
 			self._log('Job ' + job.name + ' failed (code = ' + str(code) + ')', self.COLOR_RED)
 			
 		job.isRunning = False
 		
 		
-	def daemon(self):
-		self._loadConfig()
-		
+	def service(self):
+		if not self._loadConfig():
+			self._log("Can't load config file", self.COLOR_RED)
+			return -1
+			
 		idx = 0
 		while True:
 			if threading.active_count() - 1 < self._max_jobs:
@@ -162,18 +170,20 @@ class UberBackup:
 		return 0
 			
 	def status(self):
-		self._loadConfig()
+		if not self._loadConfig():
+			self._log("Can't load config file", self.COLOR_RED)
+			return -1
+			
 		print('----- UberBackup Status -----')
 		print('Last backups sucessfull backups:')
-		currentDate = datetime.datetime.now().date()
-		for job in self._jobs:			
+		currentDate = datetime.datetime.now().date()		
+		for job in self._jobs:	
 			color = ''
 			finishColor = ''
+			lastDate = datetime.datetime.strptime(job.lastBackup, self._date_format).date()				
+			delta = currentDate - lastDate
 			if sys.stdout.isatty():			
-				finishColor = '\033[0m'
-				lastDate = datetime.datetime.strptime(job.lastBackup, self._date_format).date()				
-				delta = currentDate - lastDate
-				
+				finishColor = '\033[0m'								
 				if delta.days <= 1:
 					color = self.COLOR_GREEN
 				elif delta.days <= 5:
@@ -181,7 +191,7 @@ class UberBackup:
 				else:
 					color = self.COLOR_RED
 				
-			print("%s%s: %s%s" % (color, job.name.ljust(48), job.lastBackup, finishColor))
+			print("%s%s: %s (%d days ago)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
 			
 		return 0
 		
@@ -191,12 +201,13 @@ if __name__ == '__main__':
 	
 	if len(sys.argv) < 2:
 		print("Usage: %s [service | status]" % (sys.argv[0]))
-		print("  daemon     start backup service")
-		print("  status     show backup status")
+#		print("  service   start service in background")
+		print("  status    show backup status")
+		print("  debug     start service in debug mode")
 		sys.exit(1)
 	
-	if sys.argv[1] == 'service':
-		sys.exit(ub.daemon())		
+	if sys.argv[1] == 'debug':
+		sys.exit(ub.service())		
 	elif sys.argv[1] == 'status':		
 		sys.exit(ub.status())
 	else:
