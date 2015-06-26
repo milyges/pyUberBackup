@@ -45,7 +45,7 @@ class UberBackup:
 			self._max_backups = int(self._configParser['GLOBAL']['max_backups'])
 			self._max_jobs = int(self._configParser['GLOBAL']['max_jobs'])
 		except KeyError as e:
-			self._log("_loadConfig: missing config options: %s" % (str(e)), self.COLOR_RED)
+			self._log("Fatal: missing config options: %s" % (str(e)), self.COLOR_RED)
 			return False
 		
 		self._jobs = [ ]
@@ -56,9 +56,18 @@ class UberBackup:
 				
 			job = UberBackupJob()
 			job.name = sect
-			job.host = self._configParser[sect]['host']
-			job.path = self._configParser[sect]['path']
-			job.excludes = self._configParser[sect]['exclude'].split("\n")
+			
+			try:
+				job.host = self._configParser[sect]['host']
+				job.path = self._configParser[sect]['path']
+			except KeyError as e:
+				self._log("Warning: ignoring job: %s: missing config options: %s" % (sect, str(e)), self.COLOR_YELLOW)
+				continue
+			
+			try:
+				job.excludes = self._configParser[sect]['exclude'].split("\n")
+			except KeyError:
+				pass
 			
 			self._jobs.append(job)
 			
@@ -213,3 +222,4 @@ if __name__ == '__main__':
 	else:
 		print("%s: Unknown command '%s'" % (sys.argv[0], sys.argv[1]))
 		sys.exit(2)
+		
