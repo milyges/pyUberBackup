@@ -89,8 +89,8 @@ class UberBackup:
 				job.lastBackup = list[-1]
 
 		self._jobs.sort(key=lambda x: x.lastBackup)
-		
-	
+
+
 	def _getBackups(self,job):
 		list = []
 		if not os.path.exists(self._basePath + '/data/' + job.name):
@@ -133,9 +133,9 @@ class UberBackup:
 				# TODO: Sprawdz kod błędu
 			else:
 				os.mkdir(self._basePath + '/data/' + job.name + '/current')
-				
-				
-	def _execJob(self, job):	
+
+
+	def _execJob(self, job):
 		self._prepareJob(job)
 		
 		self._log('Starting job ' + job.name + '...', self.COLOR_CYAN)
@@ -146,7 +146,7 @@ class UberBackup:
 			self._log('Job ' + job.name + ' failed (host not found)', self.COLOR_YELLOW)
 			job.isRunning = False
 			return
-			
+
 		excludes = ''
 		for e in job.excludes:
 			excludes = excludes + '--exclude=' + e + ' '
@@ -164,7 +164,7 @@ class UberBackup:
 			self._log('Job ' + job.name + ' failed (code = ' + str(code) + ')', self.COLOR_RED)
 			
 		job.isRunning = False
-	
+
 	def service(self):
 		try:
 			pidFD = os.open(self.PID_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
@@ -175,7 +175,7 @@ class UberBackup:
 			else:
 				self._log("Can not create PID file, exiting...");
 				return 2
-			
+
 		self._pidFile = os.fdopen(pidFD, 'w')
 		self._pidFile.write("%d\n" % (os.getpid()))
 		self._pidFile.flush()
@@ -183,9 +183,9 @@ class UberBackup:
 		if not self._loadConfig():
 			self._log("Can't load config file", self.COLOR_RED)
 			return -1
-			
+
 		idx = 0
-		
+
 		self._serviceRunning = True
 		while self._serviceRunning:
 			if threading.active_count() - 1 < self._max_jobs:
@@ -201,19 +201,20 @@ class UberBackup:
 				job.isRunning = True
 				threading.Thread(target = self._execJob, args=(job,)).start()
 			
-			time.sleep(15)
+			time.sleep(10)
 			
-		return 0
-	
-	def serviceExit(self, num, *kwargs):
-		self._log("Received signal %d, exiting..." % (num));
-		self._serviceRunning = False
 		self._pidFile.close()
 		try:
 			os.unlink(self.PID_FILE);
 		except:
 			pass
 		
+		return 0
+
+	def serviceExit(self, num, *kwargs):
+		self._log("Received signal %d, exiting..." % (num));
+		self._serviceRunning = False
+
 	def status(self):
 		if not self._loadConfig():
 			self._log("Can't load config file", self.COLOR_RED)
@@ -239,7 +240,7 @@ class UberBackup:
 			print("%s%s: %s (%d days ago)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
 			
 		return 0
-		
+
 if __name__ == '__main__':
 	basepath = os.path.dirname(os.getcwd() + '/' + sys.argv[0]) + '/..'
 	ub = UberBackup(basepath)
@@ -251,16 +252,19 @@ if __name__ == '__main__':
 #		print("  stop         stop service running in background")		
 		print("  debug        start service in debug mode")
 		print("  status       show backup status")
-
 		sys.exit(1)
-	
+
 	if sys.argv[1] == 'debug':
 		signal.signal(signal.SIGTERM, ub.serviceExit)
 		signal.signal(signal.SIGINT, ub.serviceExit)
-		sys.exit(ub.service())
+		code = ub.service()
+		# Zabijamy wszystkie dzieci
+		signal.signal(signal.SIGTERM, signal.SIG_IGN)
+		os.kill(0, signal.SIGTERM)
+		sys.exit(code)
 	elif sys.argv[1] == 'status':
 		sys.exit(ub.status())
 	else:
 		print("%s: Unknown command '%s'" % (sys.argv[0], sys.argv[1]))
 		sys.exit(2)
-		
+
