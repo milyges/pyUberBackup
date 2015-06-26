@@ -7,6 +7,8 @@ import datetime
 import os
 import threading
 import sys
+import signal
+import errno
 
 class UberBackupJob:
 	def __init__(self):
@@ -30,6 +32,7 @@ class UberBackup:
 		self._jobs = []		
 		self._date_format = '%Y-%m-%d'
 		self._pidFile = None
+		self._serviceRunning = False
 		
 	def _log(self, line, color = ''):		
 		print('\r\033[K' + time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + color + line + '\033[0m')
@@ -161,14 +164,30 @@ class UberBackup:
 			self._log('Job ' + job.name + ' failed (code = ' + str(code) + ')', self.COLOR_RED)
 			
 		job.isRunning = False
+	
+	def service(self):
+		try:
+			pidFD = os.open(self.PID_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+		except OSError as e:
+			if e.errno == errno.EEXIST:
+				self._log("Service already running (or pid file not removed)", self.COLOR_RED)
+				return 1
+			else:
+				self._log("Can not create PID file, exiting...");
+				return 2
+			
+		self._pidFile = os.fdopen(pidFD, 'w')
+		self._pidFile.write("%d\n" % (os.getpid()))
+		self._pidFile.flush()
 		
-	def service(self):		
 		if not self._loadConfig():
 			self._log("Can't load config file", self.COLOR_RED)
 			return -1
 			
 		idx = 0
-		while True:
+		
+		self._serviceRunning = True
+		while self._serviceRunning:
 			if threading.active_count() - 1 < self._max_jobs:
 				job = self._jobs[idx]
 				idx = idx + 1
@@ -185,7 +204,16 @@ class UberBackup:
 			time.sleep(15)
 			
 		return 0
-			
+	
+	def serviceExit(self, num, *kwargs):
+		self._log("Received signal %d, exiting..." % (num));
+		self._serviceRunning = False
+		self._pidFile.close()
+		try:
+			os.unlink(self.PID_FILE);
+		except:
+			pass
+		
 	def status(self):
 		if not self._loadConfig():
 			self._log("Can't load config file", self.COLOR_RED)
@@ -193,14 +221,14 @@ class UberBackup:
 			
 		print('----- UberBackup Status -----')
 		print('Last backups sucessfull backups:')
-		currentDate = datetime.datetime.now().date()		
+		currentDate = datetime.datetime.now().date()
 		for job in self._jobs:	
 			color = ''
 			finishColor = ''
 			lastDate = datetime.datetime.strptime(job.lastBackup, self._date_format).date()				
 			delta = currentDate - lastDate
-			if sys.stdout.isatty():			
-				finishColor = '\033[0m'								
+			if sys.stdout.isatty():
+				finishColor = '\033[0m'
 				if delta.days <= 1:
 					color = self.COLOR_GREEN
 				elif delta.days <= 5:
@@ -217,15 +245,20 @@ if __name__ == '__main__':
 	ub = UberBackup(basepath)
 	
 	if len(sys.argv) < 2:
-		print("Usage: %s [service | status]" % (sys.argv[0]))
-#		print("  service   start service in background")
-		print("  status    show backup status")
-		print("  debug     start service in debug mode")
+		print("Usage: %s command" % (sys.argv[0]))
+		print("Supported commands:")
+#		print("  start        start service in background")		
+#		print("  stop         stop service running in background")		
+		print("  debug        start service in debug mode")
+		print("  status       show backup status")
+
 		sys.exit(1)
 	
 	if sys.argv[1] == 'debug':
-		sys.exit(ub.service())		
-	elif sys.argv[1] == 'status':		
+		signal.signal(signal.SIGTERM, ub.serviceExit)
+		signal.signal(signal.SIGINT, ub.serviceExit)
+		sys.exit(ub.service())
+	elif sys.argv[1] == 'status':
 		sys.exit(ub.status())
 	else:
 		print("%s: Unknown command '%s'" % (sys.argv[0], sys.argv[1]))
