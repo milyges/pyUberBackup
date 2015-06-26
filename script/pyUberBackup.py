@@ -49,7 +49,7 @@ class UberBackup:
 			self._max_backups = int(self._configParser['GLOBAL']['max_backups'])
 			self._max_jobs = int(self._configParser['GLOBAL']['max_jobs'])
 		except KeyError as e:
-			self._log("Fatal: missing config options: %s" % (str(e)), self.COLOR_RED)
+			self._log("Fatal: missing config option: %s" % (str(e)), self.COLOR_RED)
 			return False
 		
 		self._jobs = [ ]
@@ -65,7 +65,7 @@ class UberBackup:
 				job.host = self._configParser[sect]['host']
 				job.path = self._configParser[sect]['path']
 			except KeyError as e:
-				self._log("Warning: ignoring job: %s: missing config options: %s" % (sect, str(e)), self.COLOR_YELLOW)
+				self._log("Warning: ignoring job: %s: missing config option: %s" % (sect, str(e)), self.COLOR_YELLOW)
 				continue
 			
 			try:
@@ -165,6 +165,14 @@ class UberBackup:
 			
 		job.isRunning = False
 
+	def getServicePID(self):
+		try:
+			self._pidFile = open(self.PID_FILE, 'r')
+		except FileNotFoundError:
+			return -1
+		return int(self._pidFile.read())
+		
+
 	def service(self):
 		try:
 			pidFD = os.open(self.PID_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
@@ -249,12 +257,19 @@ if __name__ == '__main__':
 		print("Usage: %s command" % (sys.argv[0]))
 		print("Supported commands:")
 #		print("  start        start service in background")		
-#		print("  stop         stop service running in background")		
+		print("  stop         stop service running in background")		
 		print("  debug        start service in debug mode")
 		print("  status       show backup status")
 		sys.exit(1)
 
-	if sys.argv[1] == 'debug':
+	if sys.argv[1] == 'stop':
+		pid = ub.getServicePID()
+		if pid == -1:
+			print('Stop failed: Service not running (or PID file removed).')
+			sys.exit(1)
+		os.kill(pid, signal.SIGTERM)
+
+	elif sys.argv[1] == 'debug':
 		signal.signal(signal.SIGTERM, ub.serviceExit)
 		signal.signal(signal.SIGINT, ub.serviceExit)
 		code = ub.service()
