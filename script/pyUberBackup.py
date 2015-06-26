@@ -3,6 +3,7 @@
 import configparser
 import subprocess
 import time
+import datetime
 import os
 import threading
 import sys
@@ -30,11 +31,9 @@ class UberBackup:
 		self._date_format = '%Y-%m-%d'
 		
 	def _log(self, line, color = ''):		
-		print(time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + color + line + '\033[0m')
+		print('\r\033[K' + time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + color + line + '\033[0m')
 		
 	def _loadConfig(self):
-		self._log('Loading config...', self.COLOR_YELLOW)
-		
 		self._configParser.read([ self._basePath + '/conf/uberbackup.conf' ])
 		
 		self._ssh_user = self._configParser['GLOBAL']['ssh_user']
@@ -140,7 +139,7 @@ class UberBackup:
 		job.isRunning = False
 		
 		
-	def start(self):
+	def daemon(self):
 		self._loadConfig()
 		
 		idx = 0
@@ -160,9 +159,46 @@ class UberBackup:
 			
 			time.sleep(15)
 			
+		return 0
+			
+	def status(self):
+		self._loadConfig()
+		print('----- UberBackup Status -----')
+		print('Last backups sucessfull backups:')
+		currentDate = datetime.datetime.now().date()
+		for job in self._jobs:			
+			color = ''
+			finishColor = ''
+			if sys.stdout.isatty():			
+				finishColor = '\033[0m'
+				lastDate = datetime.datetime.strptime(job.lastBackup, self._date_format).date()				
+				delta = currentDate - lastDate
+				
+				if delta.days <= 1:
+					color = self.COLOR_GREEN
+				elif delta.days <= 5:
+					color = self.COLOR_YELLOW
+				else:
+					color = self.COLOR_RED
+				
+			print("%s%s: %s%s" % (color, job.name.ljust(48), job.lastBackup, finishColor))
+			
+		return 0
 		
 if __name__ == '__main__':
 	basepath = os.path.dirname(os.getcwd() + '/' + sys.argv[0]) + '/..'
 	ub = UberBackup(basepath)
-	ub.start()
 	
+	if len(sys.argv) < 2:
+		print("Usage: %s [service | status]" % (sys.argv[0]))
+		print("  daemon     start backup service")
+		print("  status     show backup status")
+		sys.exit(1)
+	
+	if sys.argv[1] == 'service':
+		sys.exit(ub.daemon())		
+	elif sys.argv[1] == 'status':		
+		sys.exit(ub.status())
+	else:
+		print("%s: Unknown command '%s'" % (sys.argv[0], sys.argv[1]))
+		sys.exit(2)
