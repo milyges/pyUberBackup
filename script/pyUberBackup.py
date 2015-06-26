@@ -29,28 +29,37 @@ class UberBackup:
 	def __init__(self, basepath):
 		self._basePath = basepath
 		self._configParser = configparser.ConfigParser()
-		self._jobs = []		
+		self._jobs = []
 		self._date_format = '%Y-%m-%d'
 		self._pidFile = None
 		self._serviceRunning = False
+		self._mailto = ''
+		self._logFileName = ''
 		
-	def _log(self, line, color = ''):		
+	def _log(self, line, color = ''):
 		print('\r\033[K' + time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + color + line + '\033[0m')
-		
+
 	def _loadConfig(self):
 		self._configParser.read([ self._basePath + '/conf/uberbackup.conf' ])
 		
+		# Opcje które muszą być określone
 		try:
 			self._ssh_user = self._configParser['GLOBAL']['ssh_user']
 			self._ssh_key = self._configParser['GLOBAL']['ssh_key']
 			self._ssh_opts = self._configParser['GLOBAL']['ssh_opts']
-			self._rsync_opts = self._configParser['GLOBAL']['rsync_opts']
-			self._mailto = self._configParser['GLOBAL']['mailto']
+			self._rsync_opts = self._configParser['GLOBAL']['rsync_opts']			
 			self._max_backups = int(self._configParser['GLOBAL']['max_backups'])
 			self._max_jobs = int(self._configParser['GLOBAL']['max_jobs'])
 		except KeyError as e:
 			self._log("Fatal: missing config option: %s" % (str(e)), self.COLOR_RED)
 			return False
+		
+		# Opcje opcjonalne
+		try:
+			self._mailto = self._configParser['GLOBAL']['mailto']
+			self._logFileName = self._configParser['GLOBAL']['log']
+		except KeyError:
+			pass
 		
 		self._jobs = [ ]
 		
@@ -178,7 +187,7 @@ class UberBackup:
 			pidFD = os.open(self.PID_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
 		except OSError as e:
 			if e.errno == errno.EEXIST:
-				self._log("Service already running (or pid file not removed)", self.COLOR_RED)
+				self._log("Service already running (or PID file not removed)", self.COLOR_RED)
 				return 1
 			else:
 				self._log("Can not create PID file, exiting...");
@@ -268,7 +277,7 @@ if __name__ == '__main__':
 			print('Stop failed: Service not running (or PID file removed).')
 			sys.exit(1)
 		os.kill(pid, signal.SIGTERM)
-
+		sys.exit(0)
 	elif sys.argv[1] == 'debug':
 		signal.signal(signal.SIGTERM, ub.serviceExit)
 		signal.signal(signal.SIGINT, ub.serviceExit)
