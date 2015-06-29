@@ -18,6 +18,7 @@ class UberBackupJob:
 		self.excludes = []
 		self.isRunning = False
 		self.lastBackup = '1970-01-01'
+		self.enabled = False
 		
 class UberBackup:
 	COLOR_GREEN = '\033[1;32m'
@@ -79,7 +80,10 @@ class UberBackup:
 			
 			try:
 				job.excludes = self._configParser[sect]['exclude'].split("\n")
+				job.enabled = self._configParser.getboolean(sect, 'enabled')
 			except KeyError:
+				pass
+			except ValueError:
 				pass
 			
 			self._jobs.append(job)
@@ -212,7 +216,7 @@ class UberBackup:
 					self._rescheduleJobs()
 					idx = 0
 					
-				if job.isRunning or self._checkJob(job):
+				if not job.enabled or job.isRunning or self._checkJob(job):
 					continue
 					
 				job.isRunning = True
@@ -247,14 +251,19 @@ class UberBackup:
 			delta = currentDate - lastDate
 			if sys.stdout.isatty():
 				finishColor = '\033[0m'
-				if delta.days <= 1:
+				if not job.enabled:
+					color = self.COLOR_CYAN
+				elif delta.days <= 1:
 					color = self.COLOR_GREEN
 				elif delta.days <= 5:
 					color = self.COLOR_YELLOW
 				else:
 					color = self.COLOR_RED
 				
-			print("%s%s: %s (%d days ago)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
+			if job.enabled:
+				print("%s%s: %s (%d days ago)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
+			else:
+				print("%s%s: %s (%d days ago, disabled)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
 			
 		return 0
 
