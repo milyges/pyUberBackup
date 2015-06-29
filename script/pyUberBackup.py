@@ -16,6 +16,7 @@ class UberBackupJob:
 		self.host = ''
 		self.path = ''
 		self.excludes = []
+		self.includes = []
 		self.isRunning = False
 		self.lastBackup = '1970-01-01'
 		self.enabled = False
@@ -74,18 +75,21 @@ class UberBackup:
 			try:
 				job.host = self._configParser[sect]['host']
 				job.path = self._configParser[sect]['path']
+				job.enabled = self._configParser.getboolean(sect, 'enabled')
 			except KeyError as e:
 				self._log("Warning: ignoring job: %s: missing config option: %s" % (sect, str(e)), self.COLOR_YELLOW)
 				continue
 			
-			try:
+			try:				
 				job.excludes = self._configParser[sect]['exclude'].split("\n")
-				job.enabled = self._configParser.getboolean(sect, 'enabled')
 			except KeyError:
 				pass
-			except ValueError:
-				pass
 			
+			try:				
+				job.includes = self._configParser[sect]['include'].split("\n")
+			except KeyError:
+				pass
+				
 			self._jobs.append(job)
 			
 		self._rescheduleJobs();
@@ -164,7 +168,11 @@ class UberBackup:
 		for e in job.excludes:
 			excludes = excludes + '--exclude=' + e + ' '
 			
-		rsync_cmd = [ 'rsync' ] +  self._rsync_opts.split() + [ '-e', 'ssh ' + self._ssh_opts + ' -i ' + self._ssh_key, '--rsync-path=sudo rsync ' + excludes, self._ssh_user + '@' + job.host + ':' + job.path, self._basePath + '/data/' + job.name + '/current' ]
+		includes = ''
+		for i in job.includes:
+			includes = includes + '--include=' + i + ' '
+			
+		rsync_cmd = [ 'rsync' ] +  self._rsync_opts.split() + [ '-e', 'ssh ' + self._ssh_opts + ' -i ' + self._ssh_key, '--rsync-path=sudo rsync ' + excludes + includes, self._ssh_user + '@' + job.host + ':' + job.path, self._basePath + '/data/' + job.name + '/current' ]
 
 		code = subprocess.call(rsync_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 		
@@ -263,7 +271,7 @@ class UberBackup:
 			if job.enabled:
 				print("%s%s: %s (%d days ago)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
 			else:
-				print("%s%s: %s (%d days ago, disabled)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
+				print("%s%s: %s (%d days ago, job disabled)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
 			
 		return 0
 
