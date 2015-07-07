@@ -16,8 +16,10 @@ class UberBackupJob:
 		self.host = ''
 		self.path = ''
 		self.excludes = []
+		self.includes = []
 		self.isRunning = False
 		self.lastBackup = '1970-01-01'
+		self.enabled = False
 		
 class UberBackup:
 	COLOR_GREEN = '\033[1;32m'
@@ -35,9 +37,14 @@ class UberBackup:
 		self._serviceRunning = False
 		self._mailto = ''
 		self._logFileName = ''
-		
+		self._logLock = threading.Lock()
+		self._jobsSemaphore = None
+
 	def _log(self, line, color = ''):
+		self._logLock.acquire()
 		print('\r\033[K' + time.strftime("%d-%m-%Y %H:%M:%S") + ': ' + color + line + '\033[0m')
+
+		self._logLock.release()
 
 	def _loadConfig(self):
 		self._configParser.read([ self._basePath + '/conf/uberbackup.conf' ])
@@ -73,15 +80,21 @@ class UberBackup:
 			try:
 				job.host = self._configParser[sect]['host']
 				job.path = self._configParser[sect]['path']
+				job.enabled = self._configParser.getboolean(sect, 'enabled')
 			except KeyError as e:
 				self._log("Warning: ignoring job: %s: missing config option: %s" % (sect, str(e)), self.COLOR_YELLOW)
 				continue
 			
-			try:
+			try:				
 				job.excludes = self._configParser[sect]['exclude'].split("\n")
 			except KeyError:
 				pass
 			
+			try:				
+				job.includes = self._configParser[sect]['include'].split("\n")
+			except KeyError:
+				pass
+				
 			self._jobs.append(job)
 			
 		self._rescheduleJobs();
@@ -148,31 +161,42 @@ class UberBackup:
 		self._prepareJob(job)
 		
 		self._log('Starting job ' + job.name + '...', self.COLOR_CYAN)
-		
-		# Sprawdzamy czy host odpowiada na pingi
-		code = subprocess.call(['ping', '-c', '1', '-q', job.host], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-		if code != 0:
-			self._log('Job ' + job.name + ' failed (host not found)', self.COLOR_YELLOW)
-			job.isRunning = False
-			return
 
-		excludes = ''
-		for e in job.excludes:
-			excludes = excludes + '--exclude=' + e + ' '
-			
-		rsync_cmd = [ 'rsync' ] +  self._rsync_opts.split() + [ '-e', 'ssh ' + self._ssh_opts + ' -i ' + self._ssh_key, '--rsync-path=sudo rsync ' + excludes, self._ssh_user + '@' + job.host + ':' + job.path, self._basePath + '/data/' + job.name + '/current' ]
+		while True:
+			# Sprawdzamy czy host odpowiada na pingi
+			code = subprocess.call(['ping', '-c', '1', '-q', job.host ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+			if code != 0:
+				self._log('Job ' + job.name + ' failed (host not found)', self.COLOR_YELLOW)
+				break
 
-		code = subprocess.call(rsync_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-		
-		# Transfer bezbłędny lub częściowy z usuniętymi plikami źródłowymi
-		if code == 0 or code == 24:
-			# Zmieniamy nazwe katalogu na dzisiejsza date
-			os.rename(self._basePath + '/data/' + job.name + '/current', self._basePath + '/data/' + job.name + '/' + time.strftime(self._date_format))			
-			self._log('Job ' + job.name + ' finished successfully', self.COLOR_GREEN)
-		else:
-			self._log('Job ' + job.name + ' failed (code = ' + str(code) + ')', self.COLOR_RED)
+			excludes = ''
+			for e in job.excludes:
+				excludes = excludes + '--exclude=' + e + ' '
 			
+			includes = ''
+			for i in job.includes:
+				includes = includes + '--include=' + i + ' '
+			
+			rsync_cmd = [ 'rsync' ] +  self._rsync_opts.split() + [ '-e', 'ssh ' + self._ssh_opts + ' -i ' + self._ssh_key, '--rsync-path=sudo rsync ' + excludes + includes, self._ssh_user + '@' + job.host + ':' + job.path, self._basePath + '/data/' + job.name + '/current' ]
+
+			code = subprocess.call(rsync_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+		
+			# Transfer bezbłędny lub częściowy z usuniętymi plikami źródłowymi
+			if code == 0 or code == 24:
+				# Zmieniamy nazwe katalogu na dzisiejsza date
+				os.rename(self._basePath + '/data/' + job.name + '/current', self._basePath + '/data/' + job.name + '/' + time.strftime(self._date_format))			
+				self._log('Job ' + job.name + ' finished successfully', self.COLOR_GREEN)
+			elif code == 30: # Timeout, restartujemy zadanie
+				self._log('I/O timeout, retarting job ' + job.name + '...', self.COLOR_CYAN)
+				continue
+			else:
+				self._log('Job ' + job.name + ' failed (code = ' + str(code) + ')', self.COLOR_RED)
+			
+			break
+
+		# Zwalniamy semafor zadan
 		job.isRunning = False
+		self._jobsSemaphore.release()
 
 	def getServicePID(self):
 		try:
@@ -203,21 +227,25 @@ class UberBackup:
 
 		idx = 0
 
+		self._jobsSemaphore = threading.Semaphore(self._max_jobs)
 		self._serviceRunning = True
 		while self._serviceRunning:
-			if threading.active_count() - 1 < self._max_jobs:
-				job = self._jobs[idx]
-				idx = idx + 1
-				if idx >= len(self._jobs):
-					self._rescheduleJobs()
-					idx = 0
+			job = self._jobs[idx]
+			idx = idx + 1
+			if idx >= len(self._jobs):
+				self._rescheduleJobs()
+				idx = 0
 					
-				if job.isRunning or self._checkJob(job):
-					continue
-					
-				job.isRunning = True
-				threading.Thread(target = self._execJob, args=(job,)).start()
+			if not job.enabled or job.isRunning or self._checkJob(job):
+				continue
 			
+			# Podnosimy semafor zadan
+			self._jobsSemaphore.acquire()
+			if not self._serviceRunning:
+				break
+
+			job.isRunning = True
+			threading.Thread(target = self._execJob, args=(job,)).start()
 			time.sleep(10)
 			
 		self._pidFile.close()
@@ -247,14 +275,19 @@ class UberBackup:
 			delta = currentDate - lastDate
 			if sys.stdout.isatty():
 				finishColor = '\033[0m'
-				if delta.days <= 1:
+				if not job.enabled:
+					color = self.COLOR_CYAN
+				elif delta.days <= 1:
 					color = self.COLOR_GREEN
-				elif delta.days <= 5:
+				elif delta.days <= 7:
 					color = self.COLOR_YELLOW
 				else:
 					color = self.COLOR_RED
 				
-			print("%s%s: %s (%d days ago)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
+			if job.enabled:
+				print("%s%s: %s (%d days ago)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
+			else:
+				print("%s%s: %s (%d days ago, job disabled)%s" % (color, job.name.ljust(48), job.lastBackup, delta.days, finishColor))
 			
 		return 0
 
