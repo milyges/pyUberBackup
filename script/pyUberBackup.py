@@ -173,19 +173,11 @@ class UberBackup:
 			for e in job.excludes:
 				excludes = excludes + '--exclude=' + e + ' '
 			
-<<<<<<< HEAD
 			includes = ''
 			for i in job.includes:
 				includes = includes + '--include=' + i + ' '
 			
 			rsync_cmd = [ 'rsync' ] +  self._rsync_opts.split() + [ '-e', 'ssh ' + self._ssh_opts + ' -i ' + self._ssh_key, '--rsync-path=sudo rsync ' + excludes + includes, self._ssh_user + '@' + job.host + ':' + job.path, self._basePath + '/data/' + job.name + '/current' ]
-=======
-		includes = ''
-		for i in job.includes:
-			includes = includes + '--include=' + i + ' '
-			
-		rsync_cmd = [ 'rsync' ] +  self._rsync_opts.split() + [ '-e', 'ssh ' + self._ssh_opts + ' -i ' + self._ssh_key, '--rsync-path=sudo rsync ' + excludes + includes, self._ssh_user + '@' + job.host + ':' + job.path, self._basePath + '/data/' + job.name + '/current' ]
->>>>>>> 8f14c9cf04d2c3f4400ce13aace02ef77ae25f45
 
 			code = subprocess.call(rsync_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 		
@@ -244,16 +236,8 @@ class UberBackup:
 				self._rescheduleJobs()
 				idx = 0
 					
-<<<<<<< HEAD
 			if not job.enabled or job.isRunning or self._checkJob(job):
 				continue
-=======
-				if not job.enabled or job.isRunning or self._checkJob(job):
-					continue
-					
-				job.isRunning = True
-				threading.Thread(target = self._execJob, args=(job,)).start()
->>>>>>> 8f14c9cf04d2c3f4400ce13aace02ef77ae25f45
 			
 			# Podnosimy semafor zadan
 			self._jobsSemaphore.acquire()
