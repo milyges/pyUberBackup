@@ -187,7 +187,7 @@ class UberBackup:
 				os.rename(self._basePath + '/data/' + job.name + '/current', self._basePath + '/data/' + job.name + '/' + time.strftime(self._date_format))			
 				self._log('Job ' + job.name + ' finished successfully', self.COLOR_GREEN)
 			elif code == 30: # Timeout, restartujemy zadanie
-				self._log('I/O timeout, retarting job ' + job.name + '...', self.COLOR_CYAN)
+				self._log('I/O timeout, restarting job ' + job.name + '...', self.COLOR_CYAN)
 				continue
 			else:
 				self._log('Job ' + job.name + ' failed (code = ' + str(code) + ')', self.COLOR_RED)
